@@ -3,9 +3,6 @@ from bs4 import BeautifulSoup
 from psycopg2 import pool
 from irdatetime import get_persian_date
 
-URL = "https://www.tgju.org/"
-
-# Database connection details
 DB_CONFIG = {
     'dbname': 'arzjoo1',
     'user': 'postgres',
@@ -20,6 +17,7 @@ db_pool = pool.SimpleConnectionPool(
 conn = db_pool.getconn()
 def get_price_data():
     """Scrape price data from the webpage and convert to integers."""
+    URL = "https://www.tgju.org/"
     response = requests.get(URL)
     response.raise_for_status()
     soup = BeautifulSoup(response.text, 'html.parser')

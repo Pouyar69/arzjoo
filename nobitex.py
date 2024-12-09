@@ -1,9 +1,7 @@
 import requests
-import psycopg2
 from psycopg2 import pool
 from irdatetime import get_persian_date
 
-# Database connection details
 DB_CONFIG = {
     'dbname': 'arzjoo1',
     'user': 'postgres',
@@ -12,7 +10,7 @@ DB_CONFIG = {
     'port': 5432
 }
 db_pool = pool.SimpleConnectionPool(
-    1, 10,  # Min and max connections in the pool
+    1, 10, 
     **DB_CONFIG
 )
 conn = db_pool.getconn()
@@ -28,7 +26,6 @@ def get_price_data():
             response.raise_for_status()  # Raise an exception for HTTP errors
             api_output = response.json()  # Parse JSON response
 
-            # Check if status is "ok"
             if api_output.get("status") == "ok":
                 last_trade_price = api_output.get("lastTradePrice")
                 all_data[name] = float(last_trade_price) /10
@@ -36,8 +33,8 @@ def get_price_data():
                 print("Status is not 'ok'.")
         print(all_data)
         with conn:
-            source_id = 4  # Example source ID for Navasan
-            source_time = get_persian_date()  # Current timestamp
+            source_id = 4 
+            source_time = get_persian_date() 
             save_prices_batch(all_data, source_id, source_time)
     except requests.exceptions.RequestException as e:
         print(f"Error while calling the API: {e}")

@@ -3,7 +3,6 @@ from requests.exceptions import ConnectionError, Timeout, TooManyRedirects
 from psycopg2 import pool
 from irdatetime import get_persian_date
 
-# Database connection details
 DB_CONFIG = {
     'dbname': 'arzjoo1',
     'user': 'postgres',
@@ -12,7 +11,7 @@ DB_CONFIG = {
     'port': 5432
 }
 db_pool = pool.SimpleConnectionPool(
-    1, 10,  # Min and max connections in the pool
+    1, 10,
     **DB_CONFIG
 )
 conn = db_pool.getconn()
@@ -37,7 +36,6 @@ def get_price_data():
         all_data = {}
         commodities = ["BTC", "ETH"]
 
-
         for crypto in data['data']:
             symbol = crypto['symbol']
             for name in commodities:
@@ -46,8 +44,8 @@ def get_price_data():
                     all_data[name] = round(price, 2)
         print(all_data)
         with conn:
-            source_id = 3  # Example source ID for Navasan
-            source_time = get_persian_date()  # Current timestamp
+            source_id = 3
+            source_time = get_persian_date()
             save_prices_batch(all_data, source_id, source_time)
     except (ConnectionError, Timeout, TooManyRedirects) as e:
         print(f"Error occurred: {e}")
@@ -96,7 +94,5 @@ def save_prices_batch(commodity_prices, source_id, source_time):
 
     except Exception as e:
         print(f"Error in batch save: {e}")
-
-
 
 get_price_data()
