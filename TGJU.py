@@ -1,57 +1,23 @@
 import requests
 from bs4 import BeautifulSoup
-import psycopg2
-from psycopg2 import sql
+from psycopg2 import pool
+from irdatetime import get_persian_date
+
+URL = "https://www.tgju.org/"
 
 # Database connection details
 DB_CONFIG = {
-    'dbname': 'arzjoo',
+    'dbname': 'arzjoo1',
     'user': 'postgres',
     'password': 'Kertob93',
     'host': 'localhost',
     'port': 5432
 }
-
-# Webpage to scrape
-URL = "https://www.tgju.org/"
-
-def create_tables(conn):
-    """Create tables in the database."""
-    commands = [
-        """
-        CREATE TABLE IF NOT EXISTS source (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(255) UNIQUE NOT NULL,
-            url VARCHAR(2083) NOT NULL
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS commodities (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(255) UNIQUE NOT NULL,
-            symbol VARCHAR(50) NOT NULL,
-            unit VARCHAR(25) NOT NULL,
-            name_fa VARCHAR(25) NOT NULL
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS prices (
-            id SERIAL PRIMARY KEY,
-            commodity_id INT NOT NULL,
-            source_id INT NOT NULL,
-            price NUMERIC(15, 2) NOT NULL,
-            recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (commodity_id) REFERENCES commodities (id),
-            FOREIGN KEY (source_id) REFERENCES source (id)
-        )
-        """
-    ]
-    cursor = conn.cursor()
-    for command in commands:
-        cursor.execute(command)
-    conn.commit()
-    cursor.close()
-
+db_pool = pool.SimpleConnectionPool(
+    1, 10,  # Min and max connections in the pool
+    **DB_CONFIG
+)
+conn = db_pool.getconn()
 def get_price_data():
     """Scrape price data from the webpage and convert to integers."""
     response = requests.get(URL)
@@ -59,158 +25,57 @@ def get_price_data():
     soup = BeautifulSoup(response.text, 'html.parser')
 
     
-    data = {
-        "Dollar": {
-            "symbol": "USD",
-            "price": float(soup.select_one("#l-price_dollar_rl .info-price").text.strip().replace(",", "")) / 10,
-            "name_fa" : "دلار",
-            "unit": "Toman"
-        },
-        "Ounce": {
-            "symbol": "XAUO",
-            "price": float(soup.select_one("#l-ons .info-price").text.strip().replace(",", "")),
-            "name_fa" : "انس جهانی",
-            "unit": "USD"
-
-        },
-        "Mesghal": {
-            "symbol": "MSQ",
-            "price": float(soup.select_one("#l-mesghal .info-price").text.strip().replace(",", "")) / 10,
-            "name_fa" : "مثقال",
-            "unit": "Toman"
-        },
-        "Gold18": {
-            "symbol": "XAU18",
-            "price": float(soup.select_one("#l-geram18 .info-price").text.strip().replace(",", "")) / 10,
-            "name_fa" : "گرم 18 عیار",
-            "unit": "Toman"
-        },
-        "CoinEmam": {
-            "symbol": "coine",
-            "price": float(soup.select_one("#l-sekee .info-price").text.strip().replace(",", "")) / 10,
-            "name_fa" : "سکه امامی",
-            "unit": "Toman"
-        },
-        "Bitcoin": {
-            "symbol": "BTC",
-            "price": float(soup.select_one("#l-crypto-bitcoin .info-price").text.strip().replace(",", "")),
-            "name_fa" : "بیت کوین",
-            "unit": "USD"
-        },
-        "Euro": {
-            "symbol": "EUR",
-            "price": float(soup.find('tr', {'data-market-row': 'price_eur'}).find('td', class_='market-price').text.strip().replace(",", "")) / 10,
-            "name_fa" : "یورو",
-            "unit": "Toman"
-        },
-        "Dirham": {
-            "symbol": "AED",
-            "price": float(soup.find('tr', {'data-market-row': 'price_aed'}).find('td', class_='market-price').text.strip().replace(",", "")) / 10,
-            "name_fa" : "درهم",
-            "unit": "Toman"
-        },
-        "Lira": {
-            "symbol": "TRY",
-            "price": float(soup.find('tr', {'data-market-row': 'price_try'}).find('td', class_='market-price').text.strip().replace(",", "")) / 10,
-            "name_fa" : "لیر",
-            "unit": "Toman"
-        },
+    data = {"XAUO": float(soup.select_one("#l-ons .info-price").text.strip().replace(",", "")), 
+            "AED": float(soup.find('tr', {'data-market-row': 'price_aed'}).find('td', class_='market-price').text.strip().replace(",", "")) / 10,
+            "TRY": float(soup.find('tr', {'data-market-row': 'price_try'}).find('td', class_='market-price').text.strip().replace(",", "")) / 10,
     }
     print(data)
-    return data
+    with conn:
+            source_id = 2  # Example source ID for Navasan
+            source_time = get_persian_date()  # Current timestamp
+            save_prices_batch(data, source_id, source_time)
 
-def insert_data(conn, source_name, source_url, data):
-    """Insert data into the database."""
-    cursor = conn.cursor()
-
-    # Insert the source
-    cursor.execute(
-        sql.SQL("""
-            INSERT INTO source (name, url)
-            VALUES (%s, %s)
-            ON CONFLICT (name) DO NOTHING RETURNING id
-        """),
-        [source_name, source_url]
-    )
-    source_id = cursor.fetchone()[0] if cursor.rowcount else None
-    if not source_id:
-        cursor.execute("SELECT id FROM source WHERE name = %s", [source_name])
-        source_id = cursor.fetchone()[0]
-
-    # Prepare data for commodities and prices insertion
-    commodity_data = []
-    price_data = []
-
-    for commodity_name, details in data.items():
-        # Prepare commodity data
-        commodity_data.append((
-            commodity_name,
-            details["symbol"],
-            details["unit"],
-            details["name_fa"]
-        ))
-
-        # Get commodity ID
-        cursor.execute(
-            sql.SQL("SELECT id FROM commodities WHERE name = %s"),
-            [commodity_name]
-        )
-        commodity_id = cursor.fetchone()[0] if cursor.rowcount else None
-        if not commodity_id:
-            # Insert the commodity if it doesn't exist
-            cursor.execute(
-                sql.SQL("""
-                    INSERT INTO commodities (name, symbol, unit, name_fa)
-                    VALUES (%s, %s, %s, %s)
-                    ON CONFLICT (name) DO NOTHING RETURNING id
-                """),
-                [commodity_name, details["symbol"], details["unit"], details["name_fa"]]
-            )
-            commodity_id = cursor.fetchone()[0]
-
-        # Prepare price data
-        price_data.append((commodity_id, source_id, details["price"]))
-
-    # Insert commodities in bulk
-    cursor.executemany(
-        sql.SQL("""
-            INSERT INTO commodities (name, symbol, unit, name_fa)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (name) DO NOTHING
-        """),
-        commodity_data
-    )
-
-    # Insert prices in bulk
-    cursor.executemany(
-        sql.SQL("""
-            INSERT INTO prices (commodity_id, source_id, price)
-            VALUES (%s, %s, %s)
-        """),
-        price_data
-    )
-
-    conn.commit()
-    cursor.close()
-
-def main():
-    # Connect to the PostgreSQL database
-    conn = psycopg2.connect(**DB_CONFIG)
-
+def save_prices_batch(commodity_prices, source_id, source_time):
+    """
+    Save multiple prices to the database in a single batch.
+    """
     try:
-        # Create tables if they don't exist
-        create_tables(conn)
+        with conn.cursor() as cur:
+            # Get all commodity IDs for the given symbols in a single query
+            symbols = tuple(commodity_prices.keys())
+            cur.execute("""
+                SELECT id, symbol FROM commodities WHERE symbol IN %s;
+            """, (symbols,))
+            commodity_mapping = {row[1]: row[0] for row in cur.fetchall()}
 
-        # Scrape price data
-        price_data = get_price_data()
+            # Prepare data for bulk insertion
+            rows_to_insert = []
+            for symbol, price in commodity_prices.items():
+                if symbol in commodity_mapping and price is not None:
+                    commodity_id = commodity_mapping[symbol]
+                    # Ensure price is converted to a proper float
+                    try:
+                        price = float(price)
+                    except ValueError:
+                        print(f"Skipping invalid price for {symbol}: {price}")
+                        continue
+                    rows_to_insert.append((commodity_id, source_id, price, source_time))
 
-        # Insert data into the database
-        insert_data(conn, "TGJU", URL, price_data)
-        print("Data inserted successfully.")
+            # Debugging: Check the data to be inserted
+            print(f"Rows to insert: {rows_to_insert}")
+
+            # Bulk insert into prices table
+            if rows_to_insert:
+                cur.executemany("""
+                    INSERT INTO prices (commodity_id, source_id, price, source_time)
+                    VALUES (%s, %s, %s, %s);
+                """, rows_to_insert)
+                conn.commit()
+                print(f"Inserted {len(rows_to_insert)} price records successfully.")
+            else:
+                print("No valid rows to insert.")
+
     except Exception as e:
-        print(f"An error occurred: {e}")
-    finally:
-        conn.close()
+        print(f"Error in batch save: {e}")
 
-if __name__ == "__main__":
-    main()
+get_price_data()

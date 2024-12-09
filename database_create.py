@@ -23,7 +23,7 @@ COMMODITIES_DATA = [
     (12, "Bitcoin", "BTC", "USD", "بیت کوین"),
     (13, "Ethereum", "ETH", "USD", "اتریوم"),
     (14, "Tether", "USDT", "Toman", "تتر"),
-    (14, "Bitcoin/Toman", "BTCIRT", "Toman", "بیت کوین به تومان"),
+    (15, "Bitcoin/Toman", "BTCIRT", "Toman", "بیت کوین به تومان"),
 ]
 
 # Data for sources table (example source)
